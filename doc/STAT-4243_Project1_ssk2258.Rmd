@@ -1,0 +1,305 @@
+---
+title: 'Minds bending Space and Time'
+author: "Sameer Kolluri (ssk2258)"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r knit settings, warning=FALSE, message=FALSE,echo=FALSE, include = FALSE}
+knitr::opts_chunk$set(eval = TRUE, echo = FALSE, warning=FALSE)
+```
+
+```{r packages, include = FALSE}
+packages.used=c("rvest", "tibble", "qdap", "parallel",
+                "sentimentr", "gplots", "dplyr", "png",
+                "tm", "syuzhet", "factoextra", "readr",
+                "beeswarm", "scales", "RColorBrewer",
+                "RANN", "tm", "topicmodels","readtext","SnowballC")
+
+# check packages that need to be installed.
+packages.needed=setdiff(packages.used, 
+                        intersect(installed.packages()[,1], 
+                                  packages.used))
+# install additional packages
+if(length(packages.needed)>0){
+  install.packages(packages.needed, dependencies = TRUE)
+}
+
+# load packages
+library("rvest")
+library("tibble")
+library("qdap")
+library("sentimentr")
+library("gplots")
+library("dplyr")
+library("tm")
+library("syuzhet")
+library("factoextra")
+library("beeswarm")
+library("scales")
+library("RColorBrewer")
+library("RANN")
+library("png")
+library("tm")
+library("topicmodels")
+library("readtext")
+library("SnowballC")
+library("parallel")
+library("readr")
+library("wordcloud")
+library("tidytext")
+```
+
+# Introduction
+
+The study of philosophy has given us many schools of thought by which we can choose to govern our lives. The greatest thinkers throughout time have attempted to provide society a logically consistent framework in which to lead a life. As one surveys the course the history of humanity has taken, it is only natural for the study of the "love for wisdom" to have been birthed. It is a commonly recorded bias for humans to look for patterns in chaos, and the reasons for existence to humankind are remain the biggest mysteries still pursued. Many have thought of novel frameworks to operate and live within. In many cases, the thought process and reasoning for a school of though were later expanded upon by other thinkers who believed in the same rationale, but were separated by time and/or space. It can be observed that contributions to certain schools, such as feminism and analytic philosophy, happen over longer decades if not centuries, so it is interesting to think how the beliefs were maintained or even updated over time. I find this to be an interesting and special pattern of human history, where two people can experience vastly different lives, yet arrive at similar conclusions or frames of mind. What does it take for such connections to occur? Are these unique situations or is there an ability to explain these parallels? In the following analysis, I dive deeper into the data.
+
+For this study, I am using the Philosophy Data Project's data set, available on [Kaggle](https://www.kaggle.com/datasets/kouroshalizadeh/history-of-philosophy).
+
+```{r data with sentiment, warning=FALSE}
+
+philo <- read.csv(file = '../data/philosophy_data.csv')
+#order by publication date, author and corpus edition
+philo <- philo[order(philo$original_publication_date, philo$author, philo$corpus_edition_date),]
+philo <- philo%>%
+         filter((school %in% c('feminism','analytic')))
+
+if(file.exists("../output/sentiment_results.csv")){
+  sent.res <- read_csv("../output/sentiment_results.csv", show_col_types = FALSE)
+} else {
+  sent.id <- numeric(length = nrow(philo))
+  for(i in 1:nrow(philo)){
+    if((i==1) || (philo$author[i-1]!=philo$author[i])){
+      sent.id[i] = 1
+    } else {
+      sent.id[i] = sent.id[i-1] + 1
+    }
+  }
+  # Sentiment Analysis - with parallel processing
+  cl <- makeCluster(detectCores()-1)
+  clusterExport(cl = cl, c("get_nrc_sentiment"))
+  sent.res <- get_nrc_sentiment(philo$sentence_str, cl = cl)
+  stopCluster(cl)
+  sent.res <- cbind(sent.id, sent.res)
+  write_csv(sent.res, "../output/sentiment_results.csv")
+}
+
+emo.philo = NULL
+emotions.types=c("anger", "anticipation", "disgust", "fear", "joy","sadness", "surprise", "trust")
+sent.id <- sent.res$sent.id
+emo.philo <- cbind(philo, sent.id, sent.res[emotions.types]/philo$sentence_length)
+
+feminism <- subset(emo.philo, school == 'feminism')
+analytic <- subset(emo.philo, school == 'analytic')
+```
+
+The schools of thought to be considered and their authors are shown in the below sections. Aside from Plato, Aristotle, and Nietzsche, whose schools are fully derived from their work, the remaining schools: Empiricism, Rationalism, Analytic, Continental, Phenomenology, German Idealism, Communism, Capitalism, Stoicism, and Feminism all have a couple contributors shown here. However, many of this subset were written about in close proximity. I would like to expand my analysis to schools that span a greater time horizon and so, the follow analysis will be on feminism and analytic philosophy. I will call the first author of a school's text as the original and compare the rest of the cohort to them. I also will look at an author's work on aggregate; their first text is no more a part of the body of their work than their last text.
+
+Namely, I believe there will be interesting findings about the similarities of these thinkers within the respective schools. With respect to feminism, the movement is a fairly modern one, but history is full of stories of women continually breaking societal barriers and advancing equality. The interesting part of this data set is the wide gap between its first and most recent feminists. I believe a bridge can be built to connect those women, despite differences in time, geography and race. As analytical philosophy is discussed, while the mobility of the proponents was greatly increased as it is more of a modern phenomenon as well, to say the thinkers share Western thinking is inaccurate. Moore and Russell had as much in common with Kripke as Wollstonecraft had with Davis. Still, all these men to discussed later share a certain curiosity for knowledge bred by their own experiences that brought them along the same path.
+
+The following analysis follows a pattern in constructing the story. In both cases, I am trying to ascertain as much knowledge from the style of writing as much as the content. That is, I observe the length of sentences and identify and trends there. After that, I look at the most emotionally charged statements each writer makes. In conjunction with a word cloud, which allows me to see the most occurring words in each author's texts, I develop a full picture about the writer's motivations and issues and discuss the connections they share with their colleagues.
+
+# Feminism
+
+```{r fem authors}
+
+school <- feminism
+school_txt <- "Feminism"
+
+aut_data <- school%>%
+                group_by(author)%>%
+                summarise(first_writing_year = first(original_publication_date))%>%
+                arrange(., first_writing_year)
+authors = aut_data$author
+aut_data
+
+```
+An interesting aspect about the feminist movement is the first text was written in 1792. It took 150 years for the next text in this data set to come out. One confounding factor is these thinkers were from different parts of the world: Wollstonecraft from Britain, Beauvoir from France and Davis from the US. Nevertheless, the movements seem to share some similarities.
+
+The chart below stood out to me quite a bit till I did some research. The shape of the beeswarm has some interesting properties. While Wollstonecraft was the first and addressed serious issues with the social structure, Beauvoir came from a bourgeois family that, despite financial setbacks, insisted on her receiving proper education. This most likely led to greater writing skills and literary capacity. Davis, who lived in the segregated South, while attaining higher levels of education, was significantly influenced by real-world politics and classism and was most likely able to keep her writings accessible for most.
+
+
+```{r fem beeswarm, include = TRUE, out.width = '100%'}
+
+sentence.list.sel=school
+sentence.list.sel$author=factor(school$author)
+
+par(mar=c(4, 11, 2, 2))
+beeswarm(sentence_length~author, 
+         data=sentence.list.sel,
+         horizontal = TRUE,
+         pch=16, col=alpha(brewer.pal(9, "Set1"), 0.6), 
+         cex=0.55, cex.axis=0.8, cex.lab=0.8,
+         spacing=1/nlevels(sentence.list.sel$author),
+         las=2, ylab="", xlab="Number of characters in a sentence.",
+         main=school_txt)
+
+```
+The following analysis on their writings is what stands out to me the most about the feminist movement before it was even truly a movement. The emotionally charged phrases seen below, identified by the NRC Emotion Lexicon, share many parallels between the writers. With many of the harshest phrases invoking grotesque imagery and, in some sense, hopelessness and despair, the shared experience of those who lived at different times in different places around the world is quite shocking. There are many themes to explore here, but the most salient ones are those noticed by world cloud. The word cloud was created from each author's whole body of work and processed by removing symbols, punctuation, stop words and ultimately stemmed. Of course, "woman" will take a big role here, as the writings were entirely centered around the woman experience in those times, but underlying themes of "power", "family", and "autonomy" seem to pop up in the background, literally. Despite the time and space gaps between these thinkers, the similarities in issues and how they are addressed are something to take note.
+
+```{r fem words, include = TRUE, warning=FALSE}
+
+for(a in authors){
+  print(a)
+  text.df=tbl_df(school)%>%
+                  filter(author==a, sentence_length>=35)%>%
+                  select(sentence_str, anger:trust)
+  text.df=as.data.frame(text.df)
+  print(as.character(text.df$sentence_str[apply(text.df[,-1], 2, which.max)]))
+  cat("\n")
+}
+
+
+```
+
+```{r fem wc, warning=FALSE}
+
+for(a in authors){
+  print(a)
+  sentence.list <- subset(school,author = a)
+  
+  corpus.list=sentence.list[2:(nrow(sentence.list)-1), ]
+  sentence.pre=sentence.list$sentence_str[1:(nrow(sentence.list)-2)]
+  sentence.post=sentence.list$sentence_str[3:(nrow(sentence.list)-1)]
+  corpus.list$snipets=paste(sentence.pre, corpus.list$sentence_str, sentence.post, sep=" ")
+  rm.rows=(1:nrow(corpus.list))[corpus.list$sent.id==1]
+  rm.rows=c(rm.rows, rm.rows-1)
+  corpus.list=corpus.list[-rm.rows, ]
+  
+  docs <- Corpus(VectorSource(corpus.list$snipets))
+  
+  #remove potentially problematic symbols
+  docs <- tm_map(docs,content_transformer(tolower))
+  #remove punctuation
+  docs <- tm_map(docs, removePunctuation)
+  #Strip digits
+  docs <- tm_map(docs, removeNumbers)
+  #remove stopwords
+  docs <- tm_map(docs, removeWords, stopwords("english"))
+  #remove whitespace
+  docs <- tm_map(docs, stripWhitespace)
+  #Stem document
+  docs <- tm_map(docs,stemDocument)
+
+  dtm <- DocumentTermMatrix(docs)
+  dtm.tidy <- tidy(dtm)
+  tdm.overall=summarise(group_by(dtm.tidy,term), sum(count))
+  
+  wordcloud(tdm.overall$term, tdm.overall$`sum(count)`,
+          scale=c(3, .5),
+          max.words=100,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Blues"))
+}
+
+```
+
+
+# Analytic Philosophy
+
+```{r ana authors, include=TRUE}
+
+school <- analytic
+school_txt <- "Analytic Philosophy"
+
+aut_data <- school%>%
+                group_by(author)%>%
+                summarise(first_writing_year = first(original_publication_date))%>%
+                arrange(., first_writing_year)
+authors = aut_data$author
+aut_data
+
+```
+
+Analytic Philosophy was quite interesting to dive into in this data set as it had many contributors to the field. Again, the thinkers here were a little divided by region and era, though Moore would have started the movement with Russell and end up meeting some of the others, like Wittgenstein, but that is to be expected as this is one of the most modern and developing schools of thought. Piece by piece, they built a framework that had a consistent language, a rigorous scientific process, and a novel set of meta-ethics and metaphysics. Still, while the way each thinker contributed to the field was slightly different, they were all of the same predisposition when it came to their logical and scientific approaches.
+
+Below described the complexity of the works and writings of these thinkers. From the beeswarm, there does not seem to be one glaring differentiation, which makes sense as they are all equally highly trained academic researchers. One thing that does stand out to me, however, is the some of the distributions are quite fat at the lower numbers, which shows me that these thinkers shared an affinity for making precise and succinct points, as opposed to rambling on as a conventional academic. It is interest that even from this aspect, the similarities can already be seen.
+
+```{r ana beeswarm, include = TRUE}
+
+sentence.list.sel=school
+sentence.list.sel$author=factor(school$author)
+
+par(mar=c(4, 11, 2, 2))
+beeswarm(sentence_length~author, 
+         data=sentence.list.sel,
+         horizontal = TRUE,
+         pch=16, col=alpha(brewer.pal(9, "Set1"), 0.6), 
+         cex=0.55, cex.axis=0.8, cex.lab=0.8,
+         spacing=1/nlevels(sentence.list.sel$author),
+         las=2, ylab="", xlab="Number of characters in a sentence.",
+         main=school_txt)
+
+```
+The following highlights the incremental progress on the logical path that these philosophers choose to follow. With following statements and word clouds generated similarly to those from the previous section, there are some interesting takeaways here as well. They all made their separate contribution to the field, however, I can not help but notice how personal these statements are. The most emotional statements are anecdotes and personal words of wisdom, while the rest of the writings are analytical, logical statements. The word clouds are very useful for determining that. As can be seen, words like "one", "can", "mean", "case" all sound the theorizing and musings of one on a logical train of thought. The similar phrasings, word usage, and tone highlight the connections found by those not necessarily  congregating mostly.
+
+```{r ana words, include = TRUE}
+
+for(a in authors){
+  print(a)
+  text.df=tbl_df(school)%>%
+                  filter(author==a, sentence_length>=35)%>%
+                  select(sentence_str, anger:trust)
+  text.df=as.data.frame(text.df)
+  print(as.character(text.df$sentence_str[apply(text.df[,-1], 2, which.max)]))
+  cat("\n")
+}
+
+
+```
+
+```{r ana wc, warning=FALSE}
+
+for(a in authors){
+  print(a)
+  sentence.list <- subset(school,author = a)
+  
+  corpus.list=sentence.list[2:(nrow(sentence.list)-1), ]
+  sentence.pre=sentence.list$sentence_str[1:(nrow(sentence.list)-2)]
+  sentence.post=sentence.list$sentence_str[3:(nrow(sentence.list)-1)]
+  corpus.list$snipets=paste(sentence.pre, corpus.list$sentence_str, sentence.post, sep=" ")
+  rm.rows=(1:nrow(corpus.list))[corpus.list$sent.id==1]
+  rm.rows=c(rm.rows, rm.rows-1)
+  corpus.list=corpus.list[-rm.rows, ]
+  
+  docs <- Corpus(VectorSource(corpus.list$snipets))
+  
+  #remove potentially problematic symbols
+  docs <- tm_map(docs,content_transformer(tolower))
+  #remove punctuation
+  docs <- tm_map(docs, removePunctuation)
+  #Strip digits
+  docs <- tm_map(docs, removeNumbers)
+  #remove stopwords
+  docs <- tm_map(docs, removeWords, stopwords("english"))
+  #remove whitespace
+  docs <- tm_map(docs, stripWhitespace)
+  #Stem document
+  docs <- tm_map(docs,stemDocument)
+
+  dtm <- DocumentTermMatrix(docs)
+  dtm.tidy <- tidy(dtm)
+  tdm.overall=summarise(group_by(dtm.tidy,term), sum(count))
+  
+  wordcloud(tdm.overall$term, tdm.overall$`sum(count)`,
+          scale=c(3, .5),
+          max.words=100,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Blues"))
+}
+
+```
+
+# Conclusion
+
+In the data, we can see similarities that go beyond sharing a belief system. These thinkers that shared a school of thought across the decades also shared experiences, mindsets and values that transcend cultural and physical boundaries. To think that people that lived 150 years ago could share the same beliefs as another is certainly part of the mystifying puzzle that is this world. While it takes some conditions to allow these connections to occur, it is even more dependent on the people thinking and experiencing these lives. These findings show how shared philosophies can spark a movement and connect the shared human experience.
+
